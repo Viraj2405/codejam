@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: audit-sentinel-db
+    environment:
+      POSTGRES_USER: auditsentinel
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: auditsentinel
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auditsentinel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - audit-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: audit-sentinel-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - audit-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: audit-sentinel-api
+    environment:
+      - DB_URL=postgres://auditsentinel:changeme@postgres:5432/auditsentinel?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+      - SCALEWAY_API_KEY=${SCALEWAY_API_KEY}
+      - SCALEWAY_PROJECT_ID=${SCALEWAY_PROJECT_ID}
+      - SCALEWAY_ORG_ID=${SCALEWAY_ORG_ID}
+      - JWT_SECRET=${JWT_SECRET:-default_secret_change_in_production}
+    ports:
+      - "8080:8080"
+      - "9090:9090"  # Prometheus metrics
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+    networks:
+      - audit-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: audit-sentinel-web
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - audit-network
+    restart: unless-stopped
+
+
+volumes:
+  postgres_data:
+  redis_data:
+
+
+networks:
+  audit-network:
+    driver: bridge
+
