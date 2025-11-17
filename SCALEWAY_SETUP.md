@@ -215,3 +215,4 @@ After starting the application, check the logs to verify:
 - Scaleway API Reference: https://api.scaleway.com/
 - Scaleway Support: https://console.scaleway.com/support
 
+
